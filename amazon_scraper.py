@@ -4,462 +4,260 @@ import time
 import re
 from typing import List, Dict, Optional
 import random
-from urllib.parse import urljoin, quote_plus
+from urllib.parse import urljoin
 from database import Database
 
 class AmazonScraper:
     def __init__(self):
         self.base_url = "https://www.amazon.com.tr"
         self.session = requests.Session()
-        
-        # User-Agent rotasyonu için liste (bot tespitini engelle)
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
-        ]
-        
-        # Ana kategoriler (sadece Elektronik - hızlı tarama için)
-        self.categories = {
-            'Elektronik': {
-                'url': '/s?k=elektronik&rh=n:13709898031&pct-off=40-',
-                'keywords': ['telefon', 'tv', 'kulaklık', 'speaker', 'mouse', 'klavye']
-            }
-        }
-        
-        # Ek arama terimleri (sadece 2 tane - hızlı tarama için)
-        self.search_terms = [
-            'gaming mouse',
-            'mekanik klavye'
-        ]
-        
-        # Fiyat aralığı
-        self.min_price = 10.0
-        self.max_price = 10000.0
-        
         self.db = Database()
-        self.found_asins = set()  # Duplicate kontrolü
     
-    def get_random_headers(self) -> Dict[str, str]:
-        """Random User-Agent ve headers döndür"""
+    def get_headers(self) -> Dict[str, str]:
+        """Basit User-Agent header"""
         return {
-            'User-Agent': random.choice(self.user_agents),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'tr-TR,tr;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Cache-Control': 'max-age=0',
-            'DNT': '1'
+            'Connection': 'keep-alive'
         }
-    
-    def make_request(self, url: str, retries: int = 3) -> Optional[requests.Response]:
-        """Güvenli HTTP request yap"""
-        for attempt in range(retries):
-            try:
-                headers = self.get_random_headers()
-                response = self.session.get(url, headers=headers, timeout=30)
-                
-                if response.status_code == 200:
-                    return response
-                elif response.status_code == 503:
-                    print(f"503 Service Unavailable - {attempt + 1}. deneme")
-                    time.sleep(random.uniform(10, 20))
-                elif response.status_code == 429:
-                    print(f"Rate limit - {attempt + 1}. deneme")
-                    time.sleep(random.uniform(15, 30))
-                else:
-                    print(f"HTTP {response.status_code} hatası: {url}")
-                    
-            except Exception as e:
-                print(f"Request hatası (deneme {attempt + 1}): {e}")
-                if attempt < retries - 1:
-                    time.sleep(random.uniform(5, 10))
-        
-        return None
     
     def extract_price(self, price_text: str) -> Optional[float]:
         """Fiyat metninden sayısal değer çıkar"""
         if not price_text:
             return None
         
-        # Türkçe fiyat formatını temizle
-        price_text = str(price_text).replace('₺', '').replace('TL', '').replace('\n', ' ').strip()
-        
-        # Sadece sayılar, virgül ve nokta bırak
-        price_text = re.sub(r'[^\d,.]', '', price_text)
-        
-        if not price_text:
+        # Sadece sayıları al
+        numbers = re.findall(r'[\d,]+', price_text.replace('₺', '').replace('TL', ''))
+        if not numbers:
             return None
         
         try:
-            # Virgül ile nokta karışıklığını düzelt
-            if ',' in price_text and '.' in price_text:
-                # 1.234,56 formatı
-                price_text = price_text.replace('.', '').replace(',', '.')
-            elif ',' in price_text:
-                # 1234,56 formatı - eğer virgül sonrası 2 haneli ise ondalık
-                parts = price_text.split(',')
-                if len(parts) == 2 and len(parts[1]) == 2:
-                    price_text = price_text.replace(',', '.')
-                else:
-                    price_text = price_text.replace(',', '')
-            
-            price = float(price_text)
-            return price if self.min_price <= price <= self.max_price else None
-            
-        except ValueError:
+            # Virgülü nokta yap
+            price_str = numbers[0].replace(',', '.')
+            price = float(price_str)
+            return price if 1 <= price <= 50000 else None
+        except:
             return None
     
-    def extract_asin(self, product_url: str) -> Optional[str]:
-        """Ürün URL'sinden ASIN çıkar"""
-        if not product_url:
-            return None
+    def simple_mouse_test(self) -> List[Dict]:
+        """ÇOK BASİT TEST: Sadece mouse ara"""
+        print("🐭 Basit mouse testi başlıyor...")
         
-        # ASIN pattern'leri
-        patterns = [
-            r'/dp/([A-Z0-9]{10})',
-            r'/gp/product/([A-Z0-9]{10})',
-            r'asin=([A-Z0-9]{10})',
-            r'/([A-Z0-9]{10})(?:/|$)',
-            r'product/([A-Z0-9]{10})'
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, product_url)
-            if match:
-                return match.group(1)
-        
-        return None
-    
-    def has_discount_badge(self, product_element) -> bool:
-        """Ürünün indirim badge'i var mı kontrol et"""
-        # İndirim badge'lerini ara
-        discount_indicators = [
-            '.a-badge-label',
-            '.a-color-price',
-            '.a-offscreen',
-            'span[data-a-color="price"]',
-            '.a-text-strike'
-        ]
-        
-        for indicator in discount_indicators:
-            elements = product_element.select(indicator)
-            for element in elements:
-                text = element.get_text().lower()
-                if any(word in text for word in ['%', 'indirim', 'off', 'save', 'was']):
-                    return True
-        
-        return False
-    
-    def extract_product_info(self, product_element) -> Optional[Dict]:
-        """Tek bir ürün elementinden bilgileri çıkar"""
-        try:
-            product_data = {}
-            
-            # Ürün linkini bul
-            link_element = product_element.select_one('h2 a, h3 a, .a-link-normal, a[data-component-type="s-product-image"]')
-            if not link_element:
-                return None
-            
-            href = link_element.get('href', '')
-            if href.startswith('/'):
-                product_url = urljoin(self.base_url, href)
-            else:
-                product_url = href
-            
-            product_data['product_url'] = product_url
-            
-            # ASIN çıkar
-            asin = self.extract_asin(product_url)
-            if not asin or asin in self.found_asins:
-                return None
-            
-            product_data['asin'] = asin
-            self.found_asins.add(asin)
-            
-            # Başlık
-            title_element = product_element.select_one('h2 span, h3 span, .a-size-base-plus, .a-size-base')
-            if title_element:
-                title = title_element.get_text(strip=True)
-                if len(title) < 10:  # Çok kısa başlıkları eleme
-                    return None
-                product_data['title'] = title
-            else:
-                return None
-            
-            # Fiyat bilgileri
-            current_price = None
-            list_price = None
-            
-            # Mevcut fiyat
-            current_price_selectors = [
-                '.a-price.a-text-price.a-size-medium.a-color-base .a-offscreen',
-                '.a-price-whole',
-                '.a-price .a-offscreen'
-            ]
-            
-            for selector in current_price_selectors:
-                price_element = product_element.select_one(selector)
-                if price_element:
-                    current_price = self.extract_price(price_element.get_text())
-                    if current_price:
-                        break
-            
-            # Liste fiyatı (eski fiyat)
-            list_price_selectors = [
-                '.a-price.a-text-price .a-offscreen',
-                '.a-text-strike .a-offscreen', 
-                '.a-price-was .a-offscreen',
-                '.a-text-strike'
-            ]
-            
-            for selector in list_price_selectors:
-                price_element = product_element.select_one(selector)
-                if price_element:
-                    list_price = self.extract_price(price_element.get_text())
-                    if list_price and list_price > (current_price or 0):
-                        break
-            
-            # Fiyat kontrolü
-            if not current_price or not list_price or list_price <= current_price:
-                return None
-            
-            product_data['current_price'] = current_price
-            product_data['list_price'] = list_price
-            
-            # İndirim yüzdesi hesapla
-            discount_percent = int(((list_price - current_price) / list_price) * 100)
-            if discount_percent < 40:  # Minimum %40 indirim
-                return None
-            
-            product_data['discount_percent'] = discount_percent
-            
-            # İndirim badge'i kontrolü
-            if not self.has_discount_badge(product_element):
-                return None
-            
-            # Kategori belirleme
-            category = self.determine_category(title)
-            product_data['category'] = category
-            
-            # Resim URL
-            img_element = product_element.select_one('img')
-            if img_element:
-                src = img_element.get('src') or img_element.get('data-src')
-                product_data['image_url'] = src if src else ''
-            else:
-                product_data['image_url'] = ''
-            
-            return product_data
-            
-        except Exception as e:
-            print(f"Ürün bilgisi çıkarma hatası: {e}")
-            return None
-    
-    def determine_category(self, title: str) -> str:
-        """Ürün başlığından kategori belirle"""
-        title_lower = title.lower()
-        
-        # Kategori anahtar kelimeleri (Elektronik odaklı)
-        if any(word in title_lower for word in ['mouse', 'klavye', 'kulaklık', 'speaker', 'şarj', 'kablo']):
-            return 'Aksesuar'
-        elif any(word in title_lower for word in ['laptop', 'bilgisayar', 'pc', 'tablet', 'macbook']):
-            return 'Bilgisayar'
-        else:
-            return 'Elektronik'  # Varsayılan
-    
-    def scrape_category_page(self, category_name: str, category_url: str, page: int = 1) -> List[Dict]:
-        """Kategori sayfasını scrape et"""
-        products = []
-        
-        # Sayfa parametresi ekle
-        if page > 1:
-            separator = '&' if '?' in category_url else '?'
-            url = f"{self.base_url}{category_url}{separator}page={page}"
-        else:
-            url = f"{self.base_url}{category_url}"
-        
-        print(f"Taranıyor: {category_name} - Sayfa {page}")
+        # Çok basit URL
+        url = "https://www.amazon.com.tr/s?k=mouse"
         print(f"URL: {url}")
         
-        response = self.make_request(url)
-        if not response:
-            print(f"Sayfa yüklenemedi: {url}")
-            return products
+        try:
+            response = self.session.get(url, headers=self.get_headers(), timeout=30)
+            print(f"Status Code: {response.status_code}")
+            
+            if response.status_code != 200:
+                print(f"❌ HTTP Error: {response.status_code}")
+                return []
+            
+            # HTML'i kaydet (debug için)
+            with open('/tmp/amazon_response.html', 'w', encoding='utf-8') as f:
+                f.write(response.text)
+            print("💾 HTML response kaydedildi: /tmp/amazon_response.html")
+            
+        except Exception as e:
+            print(f"❌ Request hatası: {e}")
+            return []
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Ürün elementlerini bul
-        product_selectors = [
-            '[data-component-type="s-search-result"]',
-            '.s-result-item[data-asin]',
-            '.sg-col-inner .s-widget-container'
-        ]
+        # Ürün kartlarını bul
+        product_cards = soup.select('div[data-component-type="s-search-result"]')
+        print(f"🔍 {len(product_cards)} ürün kartı bulundu")
         
-        product_elements = []
-        for selector in product_selectors:
-            elements = soup.select(selector)
-            if elements:
-                product_elements = elements
-                print(f"Selector '{selector}' ile {len(elements)} ürün bulundu")
-                break
+        if len(product_cards) == 0:
+            print("❌ Hiç ürün kartı bulunamadı")
+            # Alternative selectors
+            alt_cards = soup.select('.s-result-item')
+            print(f"🔍 Alternative: {len(alt_cards)} .s-result-item bulundu")
+            
+            # Tüm div'leri say
+            all_divs = soup.select('div')
+            print(f"🔍 Toplam {len(all_divs)} div elementi var")
+            
+            return []
         
-        if not product_elements:
-            print("Hiç ürün elementi bulunamadı")
-            return products
+        found_products = []
         
-        # Her ürünü işle
-        for i, element in enumerate(product_elements[:20]):  # Sayfa başına max 20 ürün
+        for i, card in enumerate(product_cards[:5]):  # İlk 5 ürün
+            print(f"\n--- ÜRÜN {i+1} ANALİZİ ---")
+            
             try:
-                product_data = self.extract_product_info(element)
-                if product_data:
-                    products.append(product_data)
-                    print(f"✓ Ürün bulundu: {product_data['title'][:50]}... - %{product_data['discount_percent']} indirim")
+                # 1. Başlık bul
+                title_element = card.select_one('h2 a span, h2 span')
+                if not title_element:
+                    print("❌ Başlık bulunamadı")
+                    continue
                 
-                # Rate limiting (hızlandırıldı)
-                time.sleep(random.uniform(1, 2))
+                title = title_element.get_text(strip=True)
+                print(f"📝 Başlık: {title[:80]}...")
+                
+                # 2. Link bul
+                link_element = card.select_one('h2 a')
+                product_url = ""
+                if link_element:
+                    href = link_element.get('href', '')
+                    if href.startswith('/'):
+                        product_url = urljoin(self.base_url, href)
+                    print(f"🔗 Link: {href[:50]}...")
+                
+                # 3. Tüm fiyat elementlerini bul
+                print("💰 Fiyat arama...")
+                
+                # Mevcut fiyat araması
+                current_price = None
+                price_selectors = [
+                    'span.a-price-whole',
+                    '.a-price .a-offscreen',
+                    'span.a-color-price'
+                ]
+                
+                for selector in price_selectors:
+                    price_elements = card.select(selector)
+                    print(f"   {selector}: {len(price_elements)} element")
+                    
+                    for pe in price_elements:
+                        price_text = pe.get_text(strip=True)
+                        price = self.extract_price(price_text)
+                        if price:
+                            current_price = price
+                            print(f"   ✅ Mevcut fiyat: {price}₺ (selector: {selector})")
+                            break
+                    
+                    if current_price:
+                        break
+                
+                # Liste fiyatı araması (çizili/strike)
+                list_price = None
+                strike_selectors = [
+                    'span.a-price[data-a-strike="true"] .a-offscreen',
+                    '.a-text-strike .a-offscreen',
+                    'span.a-text-strike',
+                    '.a-price-was'
+                ]
+                
+                for selector in strike_selectors:
+                    strike_elements = card.select(selector)
+                    print(f"   {selector}: {len(strike_elements)} element")
+                    
+                    for se in strike_elements:
+                        strike_text = se.get_text(strip=True)
+                        price = self.extract_price(strike_text)
+                        if price:
+                            list_price = price
+                            print(f"   ✅ Liste fiyatı: {price}₺ (selector: {selector})")
+                            break
+                    
+                    if list_price:
+                        break
+                
+                # 4. Resim URL
+                img_element = card.select_one('img.s-image, img')
+                image_url = ""
+                if img_element:
+                    image_url = img_element.get('src', '')
+                
+                # 5. İndirim hesaplama
+                if current_price and list_price and list_price > current_price:
+                    discount_percent = int(((list_price - current_price) / list_price) * 100)
+                    
+                    print(f"🎉 İNDİRİM BULUNDU!")
+                    print(f"   Mevcut: {current_price}₺")
+                    print(f"   Liste: {list_price}₺")
+                    print(f"   İndirim: %{discount_percent}")
+                    
+                    if discount_percent >= 40:  # %40+ indirim
+                        # ASIN çıkar (basit)
+                        asin = f"MOUSE{i+1:03d}"
+                        if '/dp/' in product_url:
+                            asin_match = re.search(r'/dp/([A-Z0-9]{10})', product_url)
+                            if asin_match:
+                                asin = asin_match.group(1)
+                        
+                        product_data = {
+                            'asin': asin,
+                            'title': title,
+                            'current_price': current_price,
+                            'list_price': list_price,
+                            'discount_percent': discount_percent,
+                            'product_url': product_url,
+                            'image_url': image_url,
+                            'category': 'Elektronik'
+                        }
+                        
+                        found_products.append(product_data)
+                        print(f"✅ Ürün kaydedildi (%{discount_percent} indirim)")
+                    else:
+                        print(f"❌ İndirim yetersiz: %{discount_percent} (min: %40)")
+                
+                elif current_price and not list_price:
+                    print(f"ℹ️  Sadece mevcut fiyat: {current_price}₺ (liste fiyatı yok)")
+                elif not current_price:
+                    print(f"❌ Hiçbir fiyat bulunamadı")
+                else:
+                    print(f"❌ İndirim yok: mevcut={current_price}₺, liste={list_price}₺")
                 
             except Exception as e:
-                print(f"Ürün {i+1} işlenirken hata: {e}")
+                print(f"❌ Ürün {i+1} hatası: {e}")
                 continue
         
-        return products
-    
-    def scrape_search_term(self, search_term: str) -> List[Dict]:
-        """Belirli bir arama terimini scrape et"""
-        products = []
-        
-        # URL'yi oluştur (%40+ indirim filtresi ile)
-        encoded_term = quote_plus(search_term)
-        url = f"{self.base_url}/s?k={encoded_term}&pct-off=40-"
-        
-        print(f"Arama terimi taranıyor: {search_term}")
-        
-        response = self.make_request(url)
-        if not response:
-            return products
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Ürün elementlerini bul
-        product_elements = soup.select('[data-component-type="s-search-result"]')
-        
-        if not product_elements:
-            return products
-        
-        # İlk 10 ürünü işle
-        for element in product_elements[:10]:
-            try:
-                product_data = self.extract_product_info(element)
-                if product_data:
-                    products.append(product_data)
-                
-                time.sleep(random.uniform(1, 2))
-                
-            except Exception as e:
-                print(f"Arama ürünü işleme hatası: {e}")
-                continue
-        
-        return products
+        print(f"\n🎯 Test sonucu: {len(found_products)} indirimli mouse bulundu")
+        return found_products
     
     def scrape_all_deals(self) -> List[Dict]:
-        """Tüm gizli indirimleri scrape et"""
-        print("🔍 Amazon.com.tr gizli indirim taraması başlıyor...")
+        """Ana scraping fonksiyonu - şimdilik sadece mouse testi"""
+        products = self.simple_mouse_test()
         
-        all_products = []
-        self.found_asins.clear()
-        
-        # 1. Kategori taraması (1 sayfa - hızlı)
-        for category_name, category_info in self.categories.items():
-            category_url = category_info['url']
-            
-            for page in range(1, 2):  # Sadece 1 sayfa (hızlı tarama)
-                try:
-                    products = self.scrape_category_page(category_name, category_url, page)
-                    all_products.extend(products)
-                    
-                    # Sayfalar arası bekleme (hızlandırıldı)
-                    time.sleep(random.uniform(2, 3))
-                    
-                except Exception as e:
-                    print(f"Kategori tarama hatası ({category_name} - Sayfa {page}): {e}")
-                    continue
-        
-        # 2. Popüler arama terimleri
-        for search_term in self.search_terms:
-            try:
-                products = self.scrape_search_term(search_term)
-                all_products.extend(products)
-                
-                time.sleep(random.uniform(2, 3))
-                
-            except Exception as e:
-                print(f"Arama terimi hatası ({search_term}): {e}")
-                continue
-        
-        # 3. Veritabanına kaydet
+        # Veritabanına kaydet
         saved_count = 0
-        for product in all_products:
+        for product in products:
             try:
                 if self.db.add_product(product):
-                    # Fiyat geçmişine de ekle
                     self.db.add_price_history(product['asin'], product['current_price'])
                     saved_count += 1
             except Exception as e:
-                print(f"Veritabanı kaydetme hatası: {e}")
+                print(f"DB kaydetme hatası: {e}")
         
-        print(f"✅ Tarama tamamlandı: {len(all_products)} ürün bulundu, {saved_count} ürün kaydedildi")
-        return all_products
+        print(f"💾 {saved_count} ürün veritabanına kaydedildi")
+        return products
     
     def get_deal_summary(self) -> Dict:
-        """Bulunan fırsatların özetini döndür"""
+        """Özet bilgiler"""
         try:
             deals = self.db.get_big_deals(min_discount=40)
             
-            summary = {
+            return {
                 'total_deals': len(deals),
-                'categories': {},
-                'best_discount': 0,
-                'average_discount': 0
+                'categories': {'Elektronik': len(deals)} if deals else {},
+                'best_discount': max([d['discount_percent'] for d in deals], default=0),
+                'average_discount': sum([d['discount_percent'] for d in deals]) / len(deals) if deals else 0
             }
-            
-            if deals:
-                # Kategori dağılımı
-                for deal in deals:
-                    category = deal['category']
-                    if category not in summary['categories']:
-                        summary['categories'][category] = 0
-                    summary['categories'][category] += 1
-                
-                # En yüksek indirim
-                summary['best_discount'] = max(deal['discount_percent'] for deal in deals)
-                
-                # Ortalama indirim
-                summary['average_discount'] = sum(deal['discount_percent'] for deal in deals) / len(deals)
-            
-            return summary
-            
         except Exception as e:
-            print(f"Özet oluşturma hatası: {e}")
+            print(f"Özet hatası: {e}")
             return {'total_deals': 0, 'categories': {}, 'best_discount': 0, 'average_discount': 0}
 
-# Test fonksiyonu
+# Test
 if __name__ == "__main__":
     scraper = AmazonScraper()
     
-    print("🚀 Test scraping başlıyor...")
-    deals = scraper.scrape_all_deals()
-    summary = scraper.get_deal_summary()
+    print("🚀 BASİT MOUSE TESTİ")
+    print("=" * 50)
     
-    print("\n=== SCRAPING ÖZETI ===")
-    print(f"Toplam fırsat: {summary['total_deals']}")
-    print(f"En yüksek indirim: %{summary['best_discount']}")
-    print(f"Ortalama indirim: %{summary['average_discount']:.1f}")
-    print("Kategori dağılımı:")
-    for category, count in summary['categories'].items():
-        print(f"  {category}: {count} ürün")
+    products = scraper.simple_mouse_test()
+    
+    print("\n📊 SONUÇLAR:")
+    if products:
+        for i, p in enumerate(products, 1):
+            print(f"{i}. {p['title'][:60]}...")
+            print(f"   %{p['discount_percent']} indirim: {p['current_price']}₺ → {p['list_price']}₺")
+    else:
+        print("❌ Hiçbir indirimli mouse bulunamadı")
+    
+    print(f"\n✅ Test tamamlandı: {len(products)} ürün")
