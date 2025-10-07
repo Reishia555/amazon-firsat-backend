@@ -505,6 +505,31 @@ def get_product_detail(asin):
             "error": str(e)
         }), 500
 
+@app.route('/test-html', methods=['GET'])
+def test_html():
+    """Amazon HTML'ini döndür (debug için)"""
+    import requests
+    url = "https://www.amazon.com.tr/s?k=mouse"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'tr-TR,tr;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive'
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        return f"""
+        <h1>Amazon HTML Debug</h1>
+        <p>Status Code: {response.status_code}</p>
+        <p>URL: {url}</p>
+        <hr>
+        <pre>{response.text}</pre>
+        """
+    except Exception as e:
+        return f"Error: {str(e)}"
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({
