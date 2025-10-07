@@ -44,6 +44,139 @@ def health_check():
         "version": "1.0.0"
     })
 
+@app.route('/products', methods=['GET'])
+def get_products():
+    """Tüm ürünleri getir"""
+    try:
+        # Query parametreleri
+        limit = request.args.get('limit', 100, type=int)
+        category = request.args.get('category')
+        
+        deals = db.get_big_deals(min_discount=70, category=category)
+        
+        # Format edilmiş sonuçlar
+        formatted_products = []
+        for deal in deals[:limit]:
+            # Datetime'ları string'e çevir
+            deal['first_seen'] = deal['first_seen'].isoformat() if deal['first_seen'] else None
+            deal['last_updated'] = deal['last_updated'].isoformat() if deal['last_updated'] else None
+            
+            # Decimal'ları float'a çevir
+            deal['current_price'] = float(deal['current_price'])
+            deal['list_price'] = float(deal['list_price'])
+            
+            formatted_products.append(deal)
+        
+        return jsonify({
+            "success": True,
+            "count": len(formatted_products),
+            "products": formatted_products
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/products/new', methods=['GET'])
+def get_new_products():
+    """Son 1 saatteki yeni ürünleri getir"""
+    try:
+        hours = request.args.get('hours', 1, type=int)
+        
+        new_deals = db.get_new_deals(hours=hours)
+        
+        # Format edilmiş sonuçlar
+        formatted_products = []
+        for deal in new_deals:
+            deal['first_seen'] = deal['first_seen'].isoformat() if deal['first_seen'] else None
+            deal['last_updated'] = deal['last_updated'].isoformat() if deal['last_updated'] else None
+            deal['current_price'] = float(deal['current_price'])
+            deal['list_price'] = float(deal['list_price'])
+            formatted_products.append(deal)
+        
+        return jsonify({
+            "success": True,
+            "count": len(formatted_products),
+            "new_products": formatted_products,
+            "time_range_hours": hours
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/scrape-now', methods=['POST'])
+def scrape_now():
+    """Manuel scraping tetikle"""
+    try:
+        # Scraping başlat
+        deals = scraper.scrape_all_deals()
+        summary = scraper.get_deal_summary()
+        
+        return jsonify({
+            "success": True,
+            "message": "Scraping tamamlandı",
+            "scraped_count": len(deals),
+            "summary": summary
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/register-device', methods=['POST'])
+def register_device():
+    """Device token kaydet"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'device_token' not in data:
+            return jsonify({
+                "success": False,
+                "error": "device_token gerekli"
+            }), 400
+        
+        device_token = data['device_token']
+        preferences = data.get('preferences', {})
+        
+        # Varsayılan tercihler
+        default_preferences = {
+            'min_discount': 70,
+            'categories': ['Bilgisayarlar', 'Elektronik', 'Ev & Mutfak', 'Spor', 'Oyun'],
+            'min_price': 10.0,
+            'max_price': 10000.0
+        }
+        
+        # Tercihleri birleştir
+        final_preferences = {**default_preferences, **preferences}
+        
+        # Veritabanına kaydet
+        success = db.save_device_token(device_token, final_preferences)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "Cihaz başarıyla kaydedildi",
+                "preferences": final_preferences
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Cihaz kaydedilemedi"
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 @app.route('/deals', methods=['GET'])
 def get_deals():
     """Fırsatları getir"""
