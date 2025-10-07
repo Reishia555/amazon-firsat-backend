@@ -20,30 +20,18 @@ class AmazonScraper:
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
         ]
         
-        # Ana kategoriler (gizli indirimleri bulacağız)
+        # Ana kategoriler (sadece Elektronik - hızlı tarama için)
         self.categories = {
-            'Bilgisayar & Tablet': {
-                'url': '/s?k=laptop&rh=n:12601898031&pct-off=40-',
-                'keywords': ['laptop', 'tablet', 'bilgisayar', 'pc']
-            },
             'Elektronik': {
                 'url': '/s?k=elektronik&rh=n:13709898031&pct-off=40-',
-                'keywords': ['telefon', 'tv', 'kulaklık', 'speaker']
-            },
-            'Aksesuar': {
-                'url': '/s?k=aksesuar&rh=n:13644327031&pct-off=40-',
-                'keywords': ['mouse', 'klavye', 'şarj', 'kablo']
+                'keywords': ['telefon', 'tv', 'kulaklık', 'speaker', 'mouse', 'klavye']
             }
         }
         
-        # Ek arama terimleri (popüler ürünler)
+        # Ek arama terimleri (sadece 2 tane - hızlı tarama için)
         self.search_terms = [
             'gaming mouse',
-            'mekanik klavye',
-            'wireless kulaklık',
-            'bluetooth speaker',
-            'laptop stand',
-            'phone case'
+            'mekanik klavye'
         ]
         
         # Fiyat aralığı
@@ -277,13 +265,11 @@ class AmazonScraper:
         """Ürün başlığından kategori belirle"""
         title_lower = title.lower()
         
-        # Kategori anahtar kelimeleri
-        if any(word in title_lower for word in ['laptop', 'bilgisayar', 'pc', 'tablet', 'macbook']):
-            return 'Bilgisayar & Tablet'
-        elif any(word in title_lower for word in ['telefon', 'phone', 'tv', 'televizyon', 'kamera']):
-            return 'Elektronik'
-        elif any(word in title_lower for word in ['mouse', 'klavye', 'kulaklık', 'speaker', 'şarj', 'kablo']):
+        # Kategori anahtar kelimeleri (Elektronik odaklı)
+        if any(word in title_lower for word in ['mouse', 'klavye', 'kulaklık', 'speaker', 'şarj', 'kablo']):
             return 'Aksesuar'
+        elif any(word in title_lower for word in ['laptop', 'bilgisayar', 'pc', 'tablet', 'macbook']):
+            return 'Bilgisayar'
         else:
             return 'Elektronik'  # Varsayılan
     
@@ -335,8 +321,8 @@ class AmazonScraper:
                     products.append(product_data)
                     print(f"✓ Ürün bulundu: {product_data['title'][:50]}... - %{product_data['discount_percent']} indirim")
                 
-                # Rate limiting
-                time.sleep(random.uniform(2, 4))
+                # Rate limiting (hızlandırıldı)
+                time.sleep(random.uniform(1, 2))
                 
             except Exception as e:
                 print(f"Ürün {i+1} işlenirken hata: {e}")
@@ -373,7 +359,7 @@ class AmazonScraper:
                 if product_data:
                     products.append(product_data)
                 
-                time.sleep(random.uniform(2, 3))
+                time.sleep(random.uniform(1, 2))
                 
             except Exception as e:
                 print(f"Arama ürünü işleme hatası: {e}")
@@ -388,17 +374,17 @@ class AmazonScraper:
         all_products = []
         self.found_asins.clear()
         
-        # 1. Kategori taraması (3 sayfa)
+        # 1. Kategori taraması (1 sayfa - hızlı)
         for category_name, category_info in self.categories.items():
             category_url = category_info['url']
             
-            for page in range(1, 4):  # İlk 3 sayfa
+            for page in range(1, 2):  # Sadece 1 sayfa (hızlı tarama)
                 try:
                     products = self.scrape_category_page(category_name, category_url, page)
                     all_products.extend(products)
                     
-                    # Sayfalar arası bekleme
-                    time.sleep(random.uniform(5, 8))
+                    # Sayfalar arası bekleme (hızlandırıldı)
+                    time.sleep(random.uniform(2, 3))
                     
                 except Exception as e:
                     print(f"Kategori tarama hatası ({category_name} - Sayfa {page}): {e}")
@@ -410,7 +396,7 @@ class AmazonScraper:
                 products = self.scrape_search_term(search_term)
                 all_products.extend(products)
                 
-                time.sleep(random.uniform(5, 8))
+                time.sleep(random.uniform(2, 3))
                 
             except Exception as e:
                 print(f"Arama terimi hatası ({search_term}): {e}")
