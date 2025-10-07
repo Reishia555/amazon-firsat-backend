@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 from database import Database
 from amazon_scraper import AmazonScraper
+from scrapers.main_scraper import MainScraper
 from price_tracker import PriceTracker
 from notifier import NotificationManager
 from scheduler import init_scheduler, get_scheduler
@@ -18,6 +19,7 @@ CORS(app)  # Tüm origin'lere izin ver
 # Global instances
 db = Database()
 scraper = AmazonScraper()
+main_scraper = MainScraper()
 price_tracker = PriceTracker()
 notification_manager = NotificationManager()
 
@@ -111,17 +113,34 @@ def get_new_products():
 
 @app.route('/scrape-now', methods=['POST'])
 def scrape_now():
-    """Manuel scraping tetikle"""
+    """Multi-site scraping tetikle"""
     try:
-        # Scraping başlat
-        deals = scraper.scrape_all_deals()
-        summary = scraper.get_deal_summary()
+        # Multi-site scraping başlat
+        all_products, results = main_scraper.scrape_all_sites()
+        
+        # Site istatistikleri
+        stats = main_scraper.get_site_statistics()
         
         return jsonify({
             "success": True,
-            "message": "Scraping tamamlandı",
-            "scraped_count": len(deals),
-            "summary": summary
+            "message": "Multi-site scraping tamamlandı",
+            "results": {
+                "total_products": results['total_products'],
+                "total_saved": results['total_saved'],
+                "scrape_time": results['scrape_time'],
+                "by_site": {
+                    "trendyol": {
+                        "count": results['trendyol']['count'],
+                        "success": results['trendyol']['success']
+                    },
+                    "hepsiburada": {
+                        "count": results['hepsiburada']['count'], 
+                        "success": results['hepsiburada']['success']
+                    }
+                },
+                "errors": results['errors']
+            },
+            "statistics": stats
         })
         
     except Exception as e:
@@ -497,6 +516,45 @@ def get_product_detail(asin):
             "product": product,
             "is_fake_discount": is_fake,
             "price_analysis": analysis
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/scrape-site/<site_name>', methods=['POST'])
+def scrape_single_site(site_name):
+    """Tek site scraping"""
+    try:
+        products, results = main_scraper.scrape_single_site(site_name)
+        
+        return jsonify({
+            "success": results['success'],
+            "site": results['site'],
+            "message": f"{site_name} scraping tamamlandı",
+            "count": results['count'],
+            "saved_count": results.get('saved_count', 0),
+            "scrape_time": results['scrape_time'],
+            "error": results['error']
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/site-stats', methods=['GET'])
+def get_site_stats():
+    """Site bazlı istatistikler"""
+    try:
+        stats = main_scraper.get_site_statistics()
+        
+        return jsonify({
+            "success": True,
+            "statistics": stats
         })
         
     except Exception as e:
