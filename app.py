@@ -287,53 +287,6 @@ def get_product_history(asin):
             "error": str(e)
         }), 500
 
-@app.route('/register', methods=['POST'])
-def register_device():
-    """Cihaz kaydı ve tercihler"""
-    try:
-        data = request.get_json()
-        
-        if not data or 'device_token' not in data:
-            return jsonify({
-                "success": False,
-                "error": "device_token gerekli"
-            }), 400
-        
-        device_token = data['device_token']
-        preferences = data.get('preferences', {})
-        
-        # Varsayılan tercihler
-        default_preferences = {
-            'min_discount': 70,
-            'categories': ['Bilgisayarlar', 'Elektronik', 'Ev & Mutfak', 'Spor', 'Oyun'],
-            'min_price': 10.0,
-            'max_price': 10000.0
-        }
-        
-        # Tercihleri birleştir
-        final_preferences = {**default_preferences, **preferences}
-        
-        # Veritabanına kaydet
-        success = db.save_device_token(device_token, final_preferences)
-        
-        if success:
-            return jsonify({
-                "success": True,
-                "message": "Cihaz başarıyla kaydedildi",
-                "preferences": final_preferences
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "error": "Cihaz kaydedilemedi"
-            }), 500
-            
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
 @app.route('/test-notification', methods=['POST'])
 def test_notification():
     """Test bildirimi gönder"""
