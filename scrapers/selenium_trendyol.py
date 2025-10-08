@@ -45,7 +45,7 @@ def scrape_trendyol_with_selenium():
                 old = float(old_price.replace('.', '').replace(',', '.').replace('TL', '').strip())
                 disc_pct = int(discount.replace('%', '').strip())
                 
-                if disc_pct >= 40:
+                if disc_pct >= 20:
                     results.append({
                         'title': title,
                         'current_price': current,
@@ -65,6 +65,6 @@ def scrape_trendyol_with_selenium():
 
 if __name__ == "__main__":
     products = scrape_trendyol_with_selenium()
-    print(f"Found {len(products)} products with 40%+ discount:")
+    print(f"Found {len(products)} products with 20%+ discount:")
     for product in products:
         print(f"- {product['title']} - {product['current_price']}TL ({product['discount_percent']}% off)")
