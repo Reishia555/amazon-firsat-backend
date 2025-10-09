@@ -6,5 +6,3 @@ apscheduler==3.10.4
 psycopg2-binary==2.9.10
 aioapns==3.2
 python-dotenv==1.0.0
-selenium==4.15.2
-webdriver-manager==4.0.1

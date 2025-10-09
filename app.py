@@ -10,10 +10,12 @@ from price_tracker import PriceTracker
 from notifier import NotificationManager
 from scheduler import init_scheduler, get_scheduler
 from dotenv import load_dotenv
+import threading
+import time
 
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='public')
 CORS(app)  # Tüm origin'lere izin ver
 
 # Global instances
@@ -25,6 +27,95 @@ notification_manager = NotificationManager()
 
 # Scheduler'ı başlat
 scheduler = init_scheduler()
+
+# Global scraping status for web interface
+scraping_status = {
+    'is_running': False,
+    'status': 'idle',
+    'start_time': None,
+    'products_found': 0,
+    'error': None
+}
+
+@app.route('/', methods=['GET'])
+def serve_web_interface():
+    """Web arayüzünü serve et"""
+    try:
+        return app.send_static_file('index.html')
+    except Exception as e:
+        return f"Web arayüzü yüklenemedi: {str(e)}", 500
+
+@app.route('/web-scrape', methods=['GET'])
+def web_scrape():
+    """Web arayüzü için Puppeteer tarama"""
+    global scraping_status
+    
+    if scraping_status['is_running']:
+        return jsonify({
+            "success": False,
+            "error": "Tarama zaten devam ediyor",
+            "status": scraping_status['status']
+        }), 409
+    
+    def run_puppeteer_scrape():
+        global scraping_status
+        
+        scraping_status['is_running'] = True
+        scraping_status['status'] = 'running'
+        scraping_status['start_time'] = datetime.now().isoformat()
+        scraping_status['products_found'] = 0
+        scraping_status['error'] = None
+        
+        try:
+            from scrapers.run_puppeteer import PuppeteerScraper
+            
+            puppeteer = PuppeteerScraper()
+            result = puppeteer.scrape_trendyol()
+            
+            if result['success']:
+                products = result['products']
+                scraping_status['products_found'] = len(products)
+                
+                # Database'e kaydet
+                save_result = puppeteer.save_to_database(products)
+                
+                scraping_status['status'] = 'completed'
+                scraping_status['save_result'] = save_result
+            else:
+                scraping_status['status'] = 'failed'
+                scraping_status['error'] = result['error']
+                
+        except Exception as e:
+            scraping_status['status'] = 'failed'
+            scraping_status['error'] = str(e)
+        finally:
+            scraping_status['is_running'] = False
+    
+    try:
+        from scrapers.run_puppeteer import PuppeteerScraper
+        
+        puppeteer = PuppeteerScraper()
+        result = puppeteer.scrape_trendyol()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Puppeteer tarama hatası: {str(e)}",
+            "products": [],
+            "count": 0
+        }), 500
+
+@app.route('/scrape-status', methods=['GET'])
+def get_scrape_status():
+    """Tarama durumunu getir"""
+    global scraping_status
+    
+    return jsonify({
+        "success": True,
+        "scraping_status": scraping_status
+    })
 
 @app.route('/health', methods=['GET'])
 def health_check():
